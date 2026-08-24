@@ -1,0 +1,8 @@
+# Telegram MTProto Client
+telethon>=1.36.0
+
+# HTTP Requests & News Scraping
+requests>=2.31.0
+
+# Environment Variable Management (.env support)
+python-dotenv>=1.0.1
