@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment & Secret variables
+.env
+
+# Database & SQLite files
+*.db
+*.sqlite
+*.sqlite3
+
+# Telethon session credentials
+*.session
+*.session-journal
+
+# Logs & Temporary folders
+*.log
+downloads/
+backups/
+venv/
+.venv/
