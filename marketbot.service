@@ -1,0 +1,14 @@
+[Unit]
+Description=Market Volatility and Economic News Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/market-volatility-bot
+ExecStart=/root/market-volatility-bot/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
