@@ -1,6 +1,4 @@
-Copy the entire text below (from the first line # 📈 Market Volatility... to the last line Free to use, modify, and distribute.) and paste it directly into your README.md file. Do not add any extra backticks or code fences around it—the content itself already contains all the necessary Markdown formatting.
 
----
 
 📈 Market Volatility & Macro News Telegram Bot
 
