@@ -1,12 +1,10 @@
 📈 Market Volatility & Macro News Telegram Bot
 
-An automated Telegram bot that monitors crypto and precious metals, detects major price movements, finds relevant breaking macro news, and uses AI to generate root-cause analysis and market scenarios in Persian.
+An automated Telegram bot that monitors cryptocurrencies and precious metals, detects major price movements, finds relevant breaking macro news, and uses AI to generate root-cause analysis and market scenarios in Persian.
 
 ✨ Features
 
-- 📊 Real-time market monitoring
-  - BTC, ETH, SOL
-  - Gold & Silver
+- 📊 Real-time monitoring of BTC, ETH, SOL, Gold & Silver
 - ⚡ Automatic volatility detection
   - Crypto: "≥ 5%"
   - Precious metals: "≥ 2%"
@@ -22,13 +20,10 @@ An automated Telegram bot that monitors crypto and precious metals, detects majo
   - OpenAI
   - Groq
   - Free/keyless fallback
-- 🇮🇷 Persian-language analysis
-- 🛡️ Anti-spam cooldown
-  - Prevents repeated alerts during extended market moves
+- 🇮🇷 Persian-language market analysis
+- 🛡️ Configurable anti-spam cooldown
 - 💰 Zero-cost market data
-  - Binance public API
-  - Stooq / Yahoo bullion feeds
-  - No paid market-data API required
+- 🔑 No paid market-data API required
 
 ---
 
@@ -71,34 +66,29 @@ pip install -r requirements.txt
 
 ⚙️ Configuration
 
-4. Create Your ".env" File
+4. Create the ".env" File
 
 cp .env.example .env
 
-Then open it:
+Open the file:
 
 nano .env
 
 Add your configuration:
 
-# Telegram
 TELEGRAM_API_ID=12345678
 TELEGRAM_API_HASH=your_telegram_api_hash
 TARGET_CHANNEL=@your_channel_username
 
-# Volatility thresholds
 CRYPTO_THRESHOLD_PCT=5.0
 METALS_THRESHOLD_PCT=2.0
-
-# Alert cooldown
 COOLDOWN_HOURS=4
 
-# AI Provider
 CUSTOM_API_KEY=your_api_key
 CUSTOM_API_BASE_URL=https://api.deepseek.com/v1
 CUSTOM_API_MODEL=deepseek-chat
 
-«🔐 Important: Never commit your ".env" file or API keys to GitHub.»
+«Important: Never commit your ".env" file or API keys to GitHub.»
 
 ---
 
@@ -106,17 +96,19 @@ CUSTOM_API_MODEL=deepseek-chat
 
 You need a Telegram API ID and API hash.
 
-Create them from:
+1. Go to https://my.telegram.org
+2. Log in with your Telegram account.
+3. Open API Development Tools.
+4. Create an application.
+5. Copy your "API ID" and "API Hash".
 
-https://my.telegram.org
-
-Then add them to ".env":
+Add them to ".env":
 
 TELEGRAM_API_ID=12345678
 TELEGRAM_API_HASH=your_telegram_api_hash
 TARGET_CHANNEL=@your_channel_username
 
-Make sure the Telegram account running the bot has permission to post in the target channel.
+The Telegram account running the bot must have permission to post messages in the target channel.
 
 ---
 
@@ -138,8 +130,6 @@ CUSTOM_API_MODEL=gpt-4o-mini
 
 Other OpenAI-Compatible Providers
 
-You can use another compatible provider by changing:
-
 CUSTOM_API_KEY=your_api_key
 CUSTOM_API_BASE_URL=https://your-provider.com/v1
 CUSTOM_API_MODEL=your-model
@@ -160,7 +150,7 @@ Enter:
 2. Telegram verification code
 3. Two-factor authentication password, if enabled
 
-After successful authentication, a Telegram session file will be created:
+After successful authentication, a session file will be created:
 
 market_session.session
 
@@ -170,7 +160,7 @@ You normally won't need to authenticate again on subsequent runs.
 
 🖥️ Production Deployment
 
-For a Linux server/VPS, you can run the bot as a "systemd" service.
+For a Linux server or VPS, you can run the bot as a "systemd" service.
 
 1. Copy the Service File
 
@@ -196,7 +186,7 @@ sudo systemctl status marketbot
 
 journalctl -u marketbot -f
 
-If the bot writes to a local log file:
+Or:
 
 tail -f market_bot.log
 
@@ -219,16 +209,14 @@ Variable| Description| Example
 
 📊 Default Volatility Triggers
 
-Asset Type| Default Trigger
-BTC| "≥ 5%"
-ETH| "≥ 5%"
-SOL| "≥ 5%"
-Gold| "≥ 2%"
-Silver| "≥ 2%"
+Asset| Trigger
+BTC| ≥ 5%
+ETH| ≥ 5%
+SOL| ≥ 5%
+Gold| ≥ 2%
+Silver| ≥ 2%
 
-The thresholds can be changed through ".env".
-
-Example:
+You can change these values in ".env":
 
 CRYPTO_THRESHOLD_PCT=3.0
 METALS_THRESHOLD_PCT=1.5
@@ -269,27 +257,7 @@ Gold and Silver prices are retrieved through publicly available Stooq / Yahoo ma
 
 News
 
-Relevant breaking news is collected through Google News RSS searches focused on macroeconomic and market-moving events.
-
----
-
-🧠 Example Analysis Flow
-
-When BTC suddenly moves more than the configured threshold:
-
-BTC moves +5.4%
-       ↓
-Bot detects abnormal movement
-       ↓
-Searches recent macro & crypto news
-       ↓
-Finds relevant catalyst(s)
-       ↓
-AI analyzes the relationship
-       ↓
-Generates Persian report
-       ↓
-Posts alert to Telegram
+Relevant breaking news is collected through Google News RSS, focused on macroeconomic and market-moving events.
 
 ---
 
@@ -297,23 +265,17 @@ Posts alert to Telegram
 
 The bot includes a configurable cooldown period.
 
-For example:
+Example:
 
 COOLDOWN_HOURS=4
 
-If BTC triggers an alert, the bot won't repeatedly send identical alerts for the same asset during the cooldown period.
+If an asset triggers an alert, the bot won't repeatedly send duplicate alerts during the cooldown period.
 
 ---
 
 🔒 Security
 
-Before deploying:
-
-- Never commit ".env"
-- Never expose Telegram API credentials
-- Never expose AI API keys
-- Keep "market_session.session" private
-- Make sure ".gitignore" includes sensitive files
+Never commit sensitive files to GitHub.
 
 Recommended ".gitignore":
 
@@ -324,35 +286,34 @@ __pycache__/
 venv/
 market_bot.log
 
+Keep the following private:
+
+- Telegram API credentials
+- AI API keys
+- ".env"
+- Telegram session files
+
 ---
 
 🐛 Troubleshooting
 
-Bot doesn't start
-
-Check that dependencies are installed:
+Check Python Dependencies
 
 pip install -r requirements.txt
 
-Telegram authentication keeps asking for login
-
-Make sure the session file exists:
+Check Telegram Session
 
 ls -la *.session
 
-systemd service isn't starting
-
-Check the service logs:
-
-sudo journalctl -u marketbot -n 100 --no-pager
-
-Check the service status:
+Check systemd Status
 
 sudo systemctl status marketbot
 
-Environment variables aren't being loaded
+Check systemd Logs
 
-Make sure ".env" exists in the directory from which the bot is configured to run:
+sudo journalctl -u marketbot -n 100 --no-pager
+
+Check ".env"
 
 ls -la .env
 
