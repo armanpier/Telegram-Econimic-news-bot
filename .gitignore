@@ -2,10 +2,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Environment & Secret variables
+# Environment variables & secrets
 .env
 
-# Database & SQLite files
+# SQLite Databases
 *.db
 *.sqlite
 *.sqlite3
@@ -14,9 +14,7 @@ __pycache__/
 *.session
 *.session-journal
 
-# Logs & Temporary folders
+# Logs & Virtual Environments
 *.log
-downloads/
-backups/
 venv/
 .venv/
