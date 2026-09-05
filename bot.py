@@ -20,9 +20,12 @@ API_ID = int(os.getenv("TELEGRAM_API_ID", 0))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
 TARGET_CHANNEL = os.getenv("TARGET_CHANNEL", "")
 
-CRYPTO_THRESHOLD_PCT = float(os.getenv("CRYPTO_THRESHOLD_PCT", 5.0))
-METALS_THRESHOLD_PCT = float(os.getenv("METALS_THRESHOLD_PCT", 2.0))
-COOLDOWN_HOURS = float(os.getenv("COOLDOWN_HOURS", 4))
+# Dual-Window Triggers
+CRYPTO_24H_THRESHOLD = float(os.getenv("CRYPTO_THRESHOLD_PCT", 5.0))
+CRYPTO_1H_THRESHOLD = 3.0    # 1-hour flash move
+METALS_24H_THRESHOLD = float(os.getenv("METALS_THRESHOLD_PCT", 2.0))
+METALS_1H_THRESHOLD = 1.2    # 1-hour flash move
+COOLDOWN_HOURS = float(os.getenv("COOLDOWN_HOURS", 3))
 
 CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY", "").strip()
 CUSTOM_API_BASE_URL = os.getenv("CUSTOM_API_BASE_URL", "https://api.deepseek.com/v1").strip()
@@ -49,50 +52,61 @@ logging.basicConfig(
 # DATABASE INITIALIZATION
 # ==========================================
 def get_db():
-    return sqlite3.connect(DB_FILE, timeout=15.0)
+    return sqlite3.connect(DB_FILE, timeout=20.0)
 
 def init_db():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS price_history 
-                 (symbol TEXT, price REAL, timestamp REAL)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS alerts_sent 
-                 (symbol TEXT, pct_change REAL, price REAL, timestamp REAL)''')
-    c.execute('''CREATE INDEX IF NOT EXISTS idx_price_ts ON price_history(timestamp)''')
-    c.execute('''CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts_sent(timestamp)''')
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        conn.execute('''CREATE TABLE IF NOT EXISTS price_history 
+                        (symbol TEXT, price REAL, timestamp REAL)''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS alerts_sent 
+                        (symbol TEXT, window TEXT, pct_change REAL, price REAL, timestamp REAL)''')
+        conn.execute('''CREATE INDEX IF NOT EXISTS idx_price_lookup ON price_history(symbol, timestamp)''')
+        conn.execute('''CREATE INDEX IF NOT EXISTS idx_alerts_lookup ON alerts_sent(symbol, timestamp)''')
 
 # ==========================================
-# DATA INGESTION & NEWS PARSERS
+# ROBUST DATA FETCHERS
 # ==========================================
 def fetch_crypto_price(symbol):
     try:
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-        res = requests.get(url, timeout=5).json()
+        res = requests.get(url, timeout=6).json()
         return float(res["price"])
     except Exception as e:
-        logging.warning(f"Error fetching {symbol}: {e}")
+        logging.warning(f"Binance fetch error ({symbol}): {e}")
         return None
 
 def fetch_metal_price(symbol):
+    # Primary: Stooq CSV feed
     try:
-        ticker = "XAUUSD" if symbol == "XAUUSD" else "XAGUSD"
-        url = f"https://stooq.com/q/l/?s={ticker.lower()}&f=sd2t2ohlc&h&e=csv"
-        res = requests.get(url, timeout=5)
+        ticker = "xauusd" if symbol == "XAUUSD" else "xagusd"
+        url = f"https://stooq.com/q/l/?s={ticker}&f=sd2t2ohlc&h&e=csv"
+        res = requests.get(url, timeout=6)
         lines = res.text.strip().split("\n")
         if len(lines) > 1:
-            val = float(lines[1].split(",")[-1])
-            if val > 0: return val
-    except Exception as e:
-        logging.warning(f"Error fetching metal {symbol}: {e}")
+            raw_val = lines[1].split(",")[-1].strip()
+            if raw_val and raw_val != "N/D":
+                return float(raw_val)
+    except Exception:
+        pass
+
+    # Fallback for Gold: Binance PAXGUSDT (1:1 physical gold backing)
+    if symbol == "XAUUSD":
+        try:
+            res = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT", timeout=6).json()
+            return float(res["price"])
+        except Exception:
+            pass
+
     return None
 
 def get_current_price(symbol, asset_type):
     return fetch_crypto_price(symbol) if asset_type == "crypto" else fetch_metal_price(symbol)
 
+# ==========================================
+# TARGETED NEWS AGGREGATOR
+# ==========================================
 def fetch_market_breaking_news(query_keyword):
-    macro_catalysts = "(Trump OR Fed OR Powell OR Treasury OR SEC OR inflation OR CPI OR War OR ETF OR liquidated OR interest)"
+    macro_catalysts = "(Trump OR Fed OR Powell OR Treasury OR SEC OR inflation OR CPI OR War OR ETF OR liquidated OR tariffs)"
     query = f"when:4h ({query_keyword}) AND {macro_catalysts}"
     rss_url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=en-US&gl=US&ceid=US:en"
     
@@ -101,37 +115,40 @@ def fetch_market_breaking_news(query_keyword):
         resp = requests.get(rss_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
         if resp.status_code == 200:
             root = ET.fromstring(resp.content)
-            for item in root.findall('.//item')[:5]:
+            for item in root.findall('.//item')[:4]:
                 title = item.find('title').text or ""
                 desc = item.find('description').text or ""
                 clean_desc = re.sub(r'<[^>]+>', '', desc)
-                articles.append(f"• {std_html.unescape(title)}: {std_html.unescape(clean_desc)[:120]}")
+                clean_title = std_html.unescape(title).strip()
+                clean_desc = std_html.unescape(clean_desc).strip()
+                articles.append(f"• {clean_title}: {clean_desc[:120]}")
     except Exception as e:
         logging.warning(f"News fetch error for {query_keyword}: {e}")
         
-    return "\n".join(articles) if articles else "عامل تکنیکال، جریان ورود/خروج ETF یا لیکوئیدیشن مشتقات (بدون بیانیه مستقل جدید)"
+    return "\n".join(articles) if articles else "حرکت شدید بر اثر لیکوئیدیشن مشتقه یا مومنتوم تکنیکال (بیانیه خبری مجزایی ثبت نشد)"
 
 # ==========================================
 # AI SYNTHESIS ENGINE
 # ==========================================
-def generate_ai_analysis(asset_name, pct_change, current_price, news_context):
+def generate_ai_analysis(asset_name, window_label, pct_change, current_price, news_context):
     direction = "صعودی (پامپ)" if pct_change > 0 else "نزولی (دامپ / ریزش)"
     
-    prompt = f"""شما یک تحلیل‌گر ارشد اقتصاد کلان و بازارهای مالی هستید.
+    prompt = f"""شما یک تحلیل‌گر ارشد بازارهای مالی و اقتصاد کلان هستید.
 دارایی: {asset_name}
-نوسان اخیر: {pct_change:+.2f}% ({direction})
+بازه نوسان: {window_label}
+درصد تغییر: {pct_change:+.2f}% ({direction})
 قیمت فعلی: {current_price:,.2f} دلار
 
-اخبار و عوامل لحظه‌ای اخیر (مواضع ترامپ، فدرال رزرو، خزانه‌داری آمریکا یا شاخص‌های کلان):
+اخبار و شواهد لحظه‌ای (شامل مواضع ترامپ، فدرال رزرو، خزانه‌داری آمریکا یا لیکوئیدیشن):
 {news_context}
 
-یک گزارش تحلیلی ساختاریافته به زبان فارسی در ۴ بخش آماده کن:
-1. 🚨 <b>علت و محرک اصلی نوسان</b> (توضیح کوتاه اینکه دقیقا چه خبر یا عاملی محرک این حرکت شد).
-2. 📌 <b>جزئیات کلیدی خبر</b> (نکات تکمیلی در ۱ الی ۲ بولت‌پوینت کوتاه).
-3. 🔮 <b>پیش‌بینی و سناریوی بعدی (چه خواهد شد؟)</b> (بررسی ۲ سناریو: اگر مومنتوم حفظ شود چه سطحی هدف است، و در صورت برگشت چه حمایتی کلیدی است).
+یک گزارش تحلیلی ساختاریافته به فارسی در ۴ بخش آماده کن:
+1. 🚨 <b>علت و محرک اصلی نوسان</b> (توضیح مستقیم اینکه چه خبر یا عاملی این حرکت را ایجاد کرد).
+2. 📌 <b>جزئیات کلیدی خبر</b> (۱ الی ۲ نکته مهم).
+3. 🔮 <b>پیش‌بینی و سناریوی بعدی (چه خواهد شد؟)</b> (بررسی ۲ سناریو: تارگت بعدی در صورت ادامه مومنتوم، و حمایت/مقاومت کلیدی در صورت برگشت).
 4. ⚠️ <b>نکته مدیریت ریسک</b>.
 
-پاسخ را بدون مقدمه و متن اضافه با تگ‌های HTML معتبر بنویس."""
+پاسخ را بدون مقدمه اضافی با تگ‌های HTML تمیز (فقط b و i) بنویس."""
 
     if CUSTOM_API_KEY:
         try:
@@ -140,102 +157,134 @@ def generate_ai_analysis(asset_name, pct_change, current_price, news_context):
             payload = {
                 "model": CUSTOM_API_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3
+                "temperature": 0.25
             }
-            resp = requests.post(endpoint, json=payload, headers=headers, timeout=15)
+            resp = requests.post(endpoint, json=payload, headers=headers, timeout=16)
             if resp.status_code == 200:
                 return resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            logging.warning(f"Custom AI failed: {e}. Falling back to keyless pool...")
+            logging.warning(f"Custom AI failed: {e}. Trying fallback pool...")
 
-    # Keyless Fallback Engine
+    # Free Pollinations AI Pool
     try:
         url = "https://text.pollinations.ai/"
         payload = {"messages": [{"role": "user", "content": prompt}], "model": "mistral"}
-        r = requests.post(url, json=payload, timeout=12)
-        if r.status_code == 200:
+        r = requests.post(url, json=payload, timeout=14)
+        if r.status_code == 200 and r.text.strip():
             return r.text.strip()
     except Exception as e:
         logging.error(f"Fallback AI failed: {e}")
         
-    return f"⚠️ نوسان شدید {pct_change:+.2f}% در {asset_name}.\nقیمت فعلی: {current_price:,.2f}$"
+    return f"⚠️ نوسان شدید {pct_change:+.2f}% در {asset_name} طی {window_label}.\nقیمت فعلی: {current_price:,.2f}$"
 
 # ==========================================
-# VOLATILITY MONITOR & BROADCASTER
+# VOLATILITY ENGINE (DUAL-WINDOW)
 # ==========================================
+def get_historical_baseline(symbol, target_seconds_ago, max_tolerance_seconds):
+    target_ts = datetime.now().timestamp() - target_seconds_ago
+    with get_db() as conn:
+        row = conn.execute("""SELECT price, timestamp FROM price_history 
+                              WHERE symbol=? AND timestamp <= ? 
+                              ORDER BY timestamp DESC LIMIT 1""", (symbol, target_ts)).fetchone()
+        if row and abs(row[1] - target_ts) <= max_tolerance_seconds:
+            return row[0]
+    return None
+
+def check_cooldown(symbol):
+    cooldown_cutoff = (datetime.now() - timedelta(hours=COOLDOWN_HOURS)).timestamp()
+    with get_db() as conn:
+        row = conn.execute("SELECT 1 FROM alerts_sent WHERE symbol=? AND timestamp > ?", 
+                           (symbol, cooldown_cutoff)).fetchone()
+        return bool(row)
+
 async def check_volatility(client):
-    conn = get_db()
-    c = conn.cursor()
     now_ts = datetime.now().timestamp()
-    one_day_ago = (datetime.now() - timedelta(hours=24)).timestamp()
     
     for symbol, meta in TRACKED_ASSETS.items():
         current_price = await asyncio.to_thread(get_current_price, symbol, meta["type"])
         if not current_price:
             continue
             
-        c.execute("INSERT INTO price_history (symbol, price, timestamp) VALUES (?, ?, ?)", 
-                  (symbol, current_price, now_ts))
-        
-        row = c.execute("""SELECT price FROM price_history 
-                           WHERE symbol=? AND timestamp >= ? 
-                           ORDER BY timestamp ASC LIMIT 1""", (symbol, one_day_ago)).fetchone()
-        
-        if row:
-            base_price = row[0]
-            pct_change = ((current_price - base_price) / base_price) * 100
-            threshold = CRYPTO_THRESHOLD_PCT if meta["type"] == "crypto" else METALS_THRESHOLD_PCT
-            
-            if abs(pct_change) >= threshold:
-                cooldown_cutoff = (datetime.now() - timedelta(hours=COOLDOWN_HOURS)).timestamp()
-                recent_alert = c.execute("""SELECT 1 FROM alerts_sent 
-                                           WHERE symbol=? AND timestamp > ?""", 
-                                         (symbol, cooldown_cutoff)).fetchone()
-                
-                if not recent_alert:
-                    logging.info(f"Threshold reached: {symbol} shifted {pct_change:+.2f}%")
-                    news_context = await asyncio.to_thread(fetch_market_breaking_news, meta["search_term"])
-                    analysis = await asyncio.to_thread(generate_ai_analysis, meta["name"], pct_change, current_price, news_context)
-                    
-                    header_icon = "🟢 📈" if pct_change > 0 else "🔴 📉"
-                    final_post = (
-                        f"{header_icon} <b>هشدار نوسان شدید در {meta['name']}</b>\n"
-                        f"تغییر ۲۴ ساعته: <b>{pct_change:+.2f}%</b> | قیمت: <b>{current_price:,.2f}$</b>\n\n"
-                        f"{analysis}"
-                        f"{BOT_SIGNATURE}"
-                    )
-                    
-                    try:
-                        await client.send_message(TARGET_CHANNEL, final_post, parse_mode='html')
-                        logging.info(f"Posted alert for {symbol} to {TARGET_CHANNEL}")
-                        c.execute("INSERT INTO alerts_sent (symbol, pct_change, price, timestamp) VALUES (?, ?, ?, ?)",
-                                  (symbol, pct_change, current_price, now_ts))
-                        conn.commit()
-                    except Exception as tg_err:
-                        logging.error(f"Telegram broadcast error: {tg_err}")
+        with get_db() as conn:
+            conn.execute("INSERT INTO price_history (symbol, price, timestamp) VALUES (?, ?, ?)", 
+                         (symbol, current_price, now_ts))
 
-    # Remove history entries older than 48 hours
-    c.execute("DELETE FROM price_history WHERE timestamp < ?", ((datetime.now() - timedelta(days=2)).timestamp(),))
-    conn.commit()
-    conn.close()
+        if check_cooldown(symbol):
+            continue
+
+        base_1h = get_historical_baseline(symbol, target_seconds_ago=3600, max_tolerance_seconds=1800)
+        base_24h = get_historical_baseline(symbol, target_seconds_ago=86400, max_tolerance_seconds=7200)
+
+        alert_triggered = False
+        window_label = ""
+        pct_change = 0.0
+
+        # Check 1: Rapid 1-Hour Flash Move
+        if base_1h:
+            chg_1h = ((current_price - base_1h) / base_1h) * 100
+            thresh_1h = CRYPTO_1H_THRESHOLD if meta["type"] == "crypto" else METALS_1H_THRESHOLD
+            if abs(chg_1h) >= thresh_1h:
+                alert_triggered = True
+                window_label = "۱ ساعت گذشته (نوسان فوری)"
+                pct_change = chg_1h
+
+        # Check 2: 24-Hour Macro Trend Move
+        if not alert_triggered and base_24h:
+            chg_24h = ((current_price - base_24h) / base_24h) * 100
+            thresh_24h = CRYPTO_24H_THRESHOLD if meta["type"] == "crypto" else METALS_24H_THRESHOLD
+            if abs(chg_24h) >= thresh_24h:
+                alert_triggered = True
+                window_label = "۲۴ ساعت گذشته"
+                pct_change = chg_24h
+
+        if alert_triggered:
+            logging.info(f"🚨 Volatility Alert: {symbol} shifted {pct_change:+.2f}% over {window_label}")
+            news_context = await asyncio.to_thread(fetch_market_breaking_news, meta["search_term"])
+            analysis = await asyncio.to_thread(generate_ai_analysis, meta["name"], window_label, pct_change, current_price, news_context)
+            
+            header_icon = "🟢 📈" if pct_change > 0 else "🔴 📉"
+            final_post = (
+                f"{header_icon} <b>هشدار نوسان شدید در {meta['name']}</b>\n"
+                f"تغییر: <b>{pct_change:+.2f}%</b> ({window_label})\n"
+                f"قیمت فعلی: <b>{current_price:,.2f}$</b>\n\n"
+                f"{analysis}"
+                f"{BOT_SIGNATURE}"
+            )
+            
+            # Safe Telegram Dispatch with Plaintext Fallback
+            try:
+                await client.send_message(TARGET_CHANNEL, final_post, parse_mode='html')
+                logging.info(f"Alert broadcasted for {symbol}")
+            except Exception as html_err:
+                logging.warning(f"HTML parse failed ({html_err}). Sending plain text fallback.")
+                plain_text = re.sub(r'<[^>]+>', '', final_post)
+                await client.send_message(TARGET_CHANNEL, plain_text)
+
+            with get_db() as conn:
+                conn.execute("INSERT INTO alerts_sent (symbol, window, pct_change, price, timestamp) VALUES (?, ?, ?, ?, ?)",
+                             (symbol, window_label, pct_change, current_price, now_ts))
+
+    # Prune history older than 48 hours
+    with get_db() as conn:
+        conn.execute("DELETE FROM price_history WHERE timestamp < ?", ((datetime.now() - timedelta(days=2)).timestamp(),))
 
 # ==========================================
-# MAIN EXECUTION LOOP
+# MAIN LOOP
 # ==========================================
 async def main():
     if not API_ID or not API_HASH or not TARGET_CHANNEL:
-        raise ValueError("Missing critical configuration. Run `python setup.py` first.")
+        raise ValueError("Missing critical configuration in .env. Run `python setup.py` first.")
         
     init_db()
     client = TelegramClient('market_session', API_ID, API_HASH)
     await client.start()
-    logging.info("Market Volatility & Macro News Bot online. Monitoring assets...")
+    logging.info("Market Volatility & Macro Bot online. Monitoring feeds...")
     
     while True:
         try:
             await check_volatility(client)
         except Exception as e:
-            logging.error(f"Execution loop exception: {e}")
+            logging.error(f"Execution loop error: {e}")
         await asyncio.sleep(60)
 
 if __name__ == '__main__':
