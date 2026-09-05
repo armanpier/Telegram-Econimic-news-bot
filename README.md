@@ -1,6 +1,6 @@
 # Market Volatility & Macro News Telegram Bot
 
-An automated Telegram bot that tracks real-time price movements across Crypto (BTC, ETH, SOL) and Precious Metals (Gold, Silver), correlates volatility with breaking macroeconomic news (Trump policy, Fed/Treasury decisions, liquidations), and publishes AI-driven root-cause breakdowns and scenario forecasts in Persian.
+An automated Telegram bot that tracks real-time price movements across Crypto (BTC, ETH, SOL) and Precious Metals (Gold, Silver), correlates volatility with breaking macroeconomic news (Trump policy, Fed/Treasury decisions, liquidations), and publishes structured AI-driven root-cause breakdowns and scenario forecasts in Persian.
 
 ---
 
@@ -10,13 +10,13 @@ An automated Telegram bot that tracks real-time price movements across Crypto (B
 * **Zero-Cost Market Data:** Continuous feeds via Binance Public Spot API and Stooq/PAXG fallback for spot gold.
 * **Targeted Macro Scraping:** Real-time Google News RSS filtering for Fed, US Treasury, White House, and crypto catalysts.
 * **AI Scenario Synthesizer:** Supports DeepSeek, OpenAI, Groq, or keyless free tier fallback for structured Persian market reports.
-* **Cooldown Protection:** Per-asset cooldown timer prevents repeated spam during extended market moves.
+* **Built-in `ecobot` CLI:** Manage the service and view logs directly from anywhere in your terminal.
 
 ---
 
 ## One-Line Setup (Ubuntu / Debian)
 
-Run the automated interactive installer to set up the virtual environment, credentials, and background systemd service:
+Run the automated installer:
 
 ```bash
 git clone [https://github.com/armanpier/Telegram-Econimic-news-bot.git](https://github.com/armanpier/Telegram-Econimic-news-bot.git)
@@ -27,12 +27,17 @@ chmod +x install.sh
 
 ---
 
-## Service Commands
+## Server Management via `ecobot` CLI
 
-* **Live Logs:** `journalctl -u marketbot -f`
-* **Restart:** `sudo systemctl restart marketbot`
-* **Stop:** `sudo systemctl stop marketbot`
-* **Status:** `sudo systemctl status marketbot`
+Once installed, use the `ecobot` command from any directory:
+
+```bash
+ecobot logs      # Stream live monitoring & alert dispatch logs
+ecobot status    # Check background daemon health
+ecobot restart   # Restart the bot
+ecobot stop      # Stop the service
+ecobot start     # Start the service
+```
 
 ---
 
