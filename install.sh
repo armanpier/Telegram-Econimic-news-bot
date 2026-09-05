@@ -13,7 +13,7 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 
-# 2. Automated Virtual Environment & Dependency Installation
+# 2. Virtual Environment & Dependencies
 echo "📦 Setting up virtual environment..."
 if [ ! -d "venv" ]; then
     python3 -m venv venv || { echo "❌ Could not create venv. Run: sudo apt install -y python3-venv"; exit 1; }
@@ -105,7 +105,7 @@ CUSTOM_API_MODEL=${CUSTOM_API_MODEL}
 EOF
 echo "✅ .env configuration generated."
 
-# 5. Telegram Session Login (Explicit .env path avoids Python 3.12 stdin frame bug)
+# 5. Telegram Session Login
 echo ""
 echo "--- 4. Telegram Account Authentication ---"
 echo "Logging in to generate your Telegram session..."
@@ -123,20 +123,20 @@ with TelegramClient('market_session', api_id, api_hash) as client:
     print(f"\n✅ Authenticated as: {user.first_name} (@{user.username})")
 PY_AUTH
 
-# 6. Linux Service Deployment
+# 6. Linux Service & 'ecobot' CLI Command Setup
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    CURRENT_USER=$(whoami)
+    CURRENT_DIR=$(pwd)
+    PYTHON_EXEC="${CURRENT_DIR}/venv/bin/python"
+    SERVICE_PATH="/etc/systemd/system/marketbot.service"
+
     echo ""
-    echo "--- 5. Background Service Deployment ---"
-    read -p "Register and launch 24/7 systemd background service? (y/n) [default: y]: " INSTALL_SERVICE
+    echo "--- 5. Background Service & CLI Setup ---"
+    read -p "Register and launch 24/7 systemd service? (y/n) [default: y]: " INSTALL_SERVICE
     INSTALL_SERVICE=${INSTALL_SERVICE:-y}
 
     if [[ "$INSTALL_SERVICE" =~ ^[Yy]$ ]]; then
-        CURRENT_USER=$(whoami)
-        CURRENT_DIR=$(pwd)
-        PYTHON_EXEC="${CURRENT_DIR}/venv/bin/python"
-        SERVICE_PATH="/etc/systemd/system/marketbot.service"
-
-        echo "⚙️ Creating /etc/systemd/system/marketbot.service..."
+        echo "⚙️ Registering /etc/systemd/system/marketbot.service..."
         sudo bash -c "cat <<EOF > $SERVICE_PATH
 [Unit]
 Description=Market Volatility & Macro News Telegram Bot
@@ -158,11 +158,53 @@ EOF"
         sudo systemctl enable --now marketbot
         echo "✅ Service registered and running in the background."
     fi
+
+    # Create global 'ecobot' CLI tool in /usr/local/bin
+    echo "⚙️ Installing global 'ecobot' terminal command..."
+    sudo bash -c "cat << 'EOF' > /usr/local/bin/ecobot
+#!/usr/bin/env bash
+
+case \"\$1\" in
+    logs)
+        journalctl -u marketbot -f
+        ;;
+    status)
+        sudo systemctl status marketbot
+        ;;
+    start)
+        sudo systemctl start marketbot && echo \"✅ marketbot started.\"
+        ;;
+    stop)
+        sudo systemctl stop marketbot && echo \"🛑 marketbot stopped.\"
+        ;;
+    restart)
+        sudo systemctl restart marketbot && echo \"🔄 marketbot restarted.\"
+        ;;
+    *)
+        echo \"\"
+        echo \"🤖 ECOBOT MANAGEMENT CLI\"
+        echo \"-------------------------\"
+        echo \"Usage: ecobot [command]\"
+        echo \"\"
+        echo \"Commands:\"
+        echo \"  ecobot logs     - Stream live logs and volatility alerts\"
+        echo \"  ecobot status   - Check if the background service is running\"
+        echo \"  ecobot restart  - Restart the bot service\"
+        echo \"  ecobot stop     - Stop the bot service\"
+        echo \"  ecobot start    - Start the bot service\"
+        echo \"\"
+        ;;
+esac
+EOF"
+    sudo chmod +x /usr/local/bin/ecobot
+    echo "✅ Global command 'ecobot' registered."
 fi
 
 echo ""
 echo "======================================================"
 echo "  🎉 Installation Complete!                           "
-echo "  To view live logs, run:                             "
-echo "      journalctl -u marketbot -f                      "
+echo "  You can now manage the bot from anywhere using:     "
+echo "      ecobot logs                                     "
+echo "      ecobot status                                   "
+echo "      ecobot restart                                  "
 echo "======================================================"
