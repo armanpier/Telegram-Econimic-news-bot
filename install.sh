@@ -7,7 +7,7 @@ echo "   🚀 Telegram Market News Bot - Automated Setup      "
 echo "======================================================"
 echo ""
 
-# 1. Verify Python & Virtual Environment Tools
+# 1. Verify Python & Tools
 if ! command -v python3 &>/dev/null; then
     echo "❌ Python 3 is not installed. Run: sudo apt update && sudo apt install -y python3 python3-venv python3-pip"
     exit 1
@@ -105,7 +105,7 @@ CUSTOM_API_MODEL=${CUSTOM_API_MODEL}
 EOF
 echo "✅ .env configuration generated."
 
-# 5. Telegram Session Login
+# 5. Telegram Session Login (Explicit .env path avoids Python 3.12 stdin frame bug)
 echo ""
 echo "--- 4. Telegram Account Authentication ---"
 echo "Logging in to generate your Telegram session..."
@@ -114,7 +114,7 @@ import os
 from telethon.sync import TelegramClient
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(dotenv_path=".env")
 api_id = int(os.getenv("TELEGRAM_API_ID"))
 api_hash = os.getenv("TELEGRAM_API_HASH")
 
